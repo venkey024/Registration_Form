@@ -1,5 +1,6 @@
 import mysql.connector
-# for checking password each and every character
+
+# Class for password validation
 class Password:
     def __init__(self, pas):
         self.pas = pas
@@ -39,18 +40,18 @@ class Password:
 def mobile_verify(num):
     return len(num) == 10 and num.isdigit()
 
-# Function for Mail Validation in three parts
-# 1.Function for mail validation for part-1 (ex: venkatesh@gmail.com -- venkatesh)
 
+# Function for mail validation part-1 (username)
 def mail_part_1(username):
     return username.islower() or username.isnumeric()
 
-# 2.Function for mail validation for part-2 and part -3 (ex: venkatesh@gmail.com -- gmail or yahoo, com or in)
+
+# Function for mail validation part-2 (domain) and part-3 (tld)
 def mail_part_2(domain, tld):
     return (len(domain) - 1) >= 1 and tld in ['com', 'in']
 
 
-# Function for defining parts into three
+# Function to verify email
 def email_verify(email):
     try:
         username = email[:email.index('@')]
@@ -59,7 +60,6 @@ def email_verify(email):
         return mail_part_1(username) and mail_part_2(domain, tld)
     except ValueError:
         return False
-
 
 # Registration function
 def registration():
@@ -94,6 +94,12 @@ def registration():
             cursor.execute(query, data)
             mydb.commit()
             print("Registration Successful!")
+            # Prompt for login or exit
+            next_action = input("Do you want to log in now? (yes/no): ").strip().lower()
+            if next_action == 'yes':
+                login()
+            else:
+                print("Exiting the program. Goodbye!")
         except mysql.connector.Error as err:
             print(f"Error: {err}")
         finally:
@@ -110,31 +116,69 @@ def registration():
                 print("-", msg)
 
 
+# Function for login
 def login():
     email = input("Enter email: ")
     password = input("Enter password: ")
 
     # Check if the details are in the database
-    if check_database(email, password):
+    login_result = check_database(email, password)
+    if login_result == "login_success":
         print("Enter into website")
+
+    elif login_result == "password_incorrect":
+        print("Password does not match")
+        forgot_password = input("Forgot password? (yes/no): ").strip().lower()
+        if forgot_password == 'yes':
+            forgotten_password(email)
     else:
         print("Details not in database, please register.")
         registration()
 
-# if user forgotten password  then check the database with mail
-def forgotten_password():
-    email = input("Enter email: ")
 
+# Function to handle forgotten password
+def forgotten_password(email=None):
+    if not email:
+        email = input("Enter email: ")
     # Check if the email is in the database
-    if check_database(email):
+    if check_database(email) == "email_exists":
         print("Create new password : ")
         new_password = input("Enter new password: ")
-        update_password(email, new_password)
-        print("Password updated")
-    else:
-        print("Email not found in database, please register.")
-        registration()
+        pass_obj = Password(new_password)
+        password_valid = pass_obj.validate()
+        if password_valid:
+            update_password(email, new_password)
+            print("Password updated")
+            # Prompt for login or exit
+            next_action = input("Do you want to log in now? (yes/no): ").strip().lower()
+            if next_action == 'yes':
+                login()
+            else:
+                print("Exiting the program. Goodbye!")
+        else:
+            print("Password validation failed:")
+            for msg in pass_obj.error_messages:
+                print("-", msg)
 
+                # again for creating password
+                print("Create new password : ")
+                new_password = input("Enter new password: ")
+                pass_obj = Password(new_password)
+                password_valid = pass_obj.validate()
+                if password_valid:
+                    update_password(email, new_password)
+                    print("Password updated")
+                    # Prompt for login or exit
+                    next_action = input("Do you want to log in now? (yes/no): ").strip().lower()
+                    if next_action == 'yes':
+                        login()
+                    else:
+                        print("Exiting the program. Goodbye!")
+    else:
+        print("Email not found in the database.")
+
+
+# Function to simulate checking the database
 
 # Function to simulate checking the database
 def check_database(email, password=None):
@@ -145,21 +189,42 @@ def check_database(email, password=None):
             password='Venkey@123',
             database='sql_connector'
         )
-        cursor = mydb.cursor()
-        if password:
-            query = "SELECT * FROM datainfo WHERE email=%s AND password=%s"
-            cursor.execute(query, (email, password))
-        else:
-            query = "SELECT * FROM datainfo WHERE email=%s"
+
+        with mydb.cursor() as cursor:
+            # Check if the email exists
+            query = "SELECT password FROM datainfo WHERE email=%s"
             cursor.execute(query, (email,))
-        result = cursor.fetchone()
-        return result is not None
+            result = cursor.fetchone()
+
+            if result is None:
+                # Email does not exist
+                return "email_not_found"
+
+            stored_password = result[0]
+
+            if password:
+                if stored_password != password:
+                    # Email exists but password does not match
+                    return "password_incorrect"
+                else:
+                    # Email and password match
+                    return "login_success"
+            else:
+                # Email exists, password not checked
+                return "email_exists"
+
     except mysql.connector.Error as err:
-        print(f"Error: {err}")
-        return False
+        if err.errno == mysql.connector.errorcode.ER_ACCESS_DENIED_ERROR:
+            print("Something is wrong with your user name or password")
+        elif err.errno == mysql.connector.errorcode.ER_BAD_DB_ERROR:
+            print("Database does not exist")
+        else:
+            print(f"Error: {err}")
+        return "error"
+
     finally:
-        cursor.close()
-        mydb.close()
+        if mydb.is_connected():
+            mydb.close()
 
 
 # Function to update the password in the database
@@ -194,6 +259,7 @@ def main():
         forgotten_password()
     else:
         print("Invalid option, please try again.")
+
 
 # Run the main function
 if __name__ == "__main__":
